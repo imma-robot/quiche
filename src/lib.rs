@@ -2069,13 +2069,16 @@ impl Connection {
         if !stream::is_bidi(stream_id) &&
             stream::is_local(stream_id, self.is_server)
         {
+            trace!("We can't read on our own unidirectional streams");
             return Err(Error::InvalidStreamState);
         }
 
+        trace!("Getting mutable variable for stream {}", stream_id);
         let stream = self
             .streams
             .get_mut(stream_id)
             .ok_or(Error::InvalidStreamState)?;
+        trace!("Got mutable variable for stream {}", stream_id);
 
         if !stream.is_readable() {
             return Err(Error::Done);
@@ -2137,6 +2140,7 @@ impl Connection {
         if !stream::is_bidi(stream_id) &&
             !stream::is_local(stream_id, self.is_server)
         {
+            trace!("We can't write on the peer's unidirectional streams");
             return Err(Error::InvalidStreamState);
         }
 
@@ -2219,6 +2223,7 @@ impl Connection {
             return Ok(stream.send.cap());
         };
 
+        trace!("Could not get stream capacity!");
         Err(Error::InvalidStreamState)
     }
 
@@ -2699,6 +2704,7 @@ impl Connection {
                 if !stream::is_bidi(stream_id) &&
                     stream::is_local(stream_id, self.is_server)
                 {
+                    trace!("Peer can't send on our unidirectional streams.");
                     return Err(Error::InvalidStreamState);
                 }
 
@@ -2717,6 +2723,7 @@ impl Connection {
                 if !stream::is_local(stream_id, self.is_server) &&
                     !stream::is_bidi(stream_id)
                 {
+                    trace!("STOP_SENDING on a receive-only stream is a fatal error");
                     return Err(Error::InvalidStreamState);
                 }
             },
@@ -2749,6 +2756,7 @@ impl Connection {
                 if !stream::is_bidi(stream_id) &&
                     stream::is_local(stream_id, self.is_server)
                 {
+                    trace!("Peer can't send on our unidirectional streams");
                     return Err(Error::InvalidStreamState);
                 }
 
