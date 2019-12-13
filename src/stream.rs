@@ -145,11 +145,13 @@ impl StreamMap {
         let stream = match self.streams.entry(id) {
             hash_map::Entry::Vacant(v) => {
                 if local != is_local(id, is_server) {
+                    eprintln!("Stream was not created locally!");
                     return Err(Error::InvalidStreamState);
                 }
 
                 // Stream has already been closed and garbage collected.
                 if self.collected.contains(&id) {
+                    eprintln!("Stream has already been closed and garbage collected");
                     return Err(Error::InvalidStreamState);
                 }
 

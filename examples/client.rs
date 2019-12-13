@@ -35,7 +35,6 @@ use ring::rand::*;
 
 const MAX_DATAGRAM_SIZE: usize = 1350;
 
-const HTTP_REQ_STREAM_ID: u64 = 4;
 
 const USAGE: &str = "Usage:
   client [options] URL
@@ -47,6 +46,7 @@ Options:
   --wire-version VERSION   The version number to send to the server [default: babababa].
   --dump-packets PATH      Dump the incoming packets as files in the given directory.
   --no-verify              Don't verify server's certificate.
+  -n --requests REQUESTS   Send the given number of identical requests one after another [default: 1].
   -h --help                Show this screen.
 ";
 
@@ -70,6 +70,10 @@ fn main() {
 
     let version = args.get_str("--wire-version");
     let version = u32::from_str_radix(version, 16).unwrap();
+
+    let mut http_req_stream_id: u64 = 4;
+    let reqs_count = args.get_str("--requests");
+    let reqs_count = u64::from_str_radix(reqs_count, 10).unwrap();
 
     let dump_path = if args.get_str("--dump-packets") != "" {
         Some(args.get_str("--dump-packets"))
@@ -167,6 +171,7 @@ fn main() {
 
     let mut pkt_count = 0;
 
+    let mut num_reqs_sent = 0;
     loop {
         poll.poll(&mut events, conn.timeout()).unwrap();
 
@@ -234,17 +239,6 @@ fn main() {
             break;
         }
 
-        // Send an HTTP request as soon as the connection is established.
-        if conn.is_established() && !req_sent {
-            info!("sending HTTP request for {}", url.path());
-
-            let req = format!("GET {}\r\n", url.path());
-            conn.stream_send(HTTP_REQ_STREAM_ID, req.as_bytes(), true)
-                .unwrap();
-
-            req_sent = true;
-        }
-
         // Process all readable streams.
         for s in conn.readable() {
             while let Ok((read, fin)) = conn.stream_recv(s, &mut buf) {
@@ -265,15 +259,35 @@ fn main() {
 
                 // The server reported that it has no more data to send, which
                 // we got the full response. Close the connection.
-                if s == HTTP_REQ_STREAM_ID && fin {
+                if s == http_req_stream_id && fin {
                     info!(
-                        "response received in {:?}, closing...",
+                        "response received in {:?}, continuing...",
                         req_start.elapsed()
                     );
 
-                    conn.close(true, 0x00, b"kthxbye").unwrap();
+                    // Close the connection when we have done the requested number of requests
+                    if num_reqs_sent >= reqs_count {
+                        conn.close(true, 0x00, b"kthxbye").unwrap();
+                    }
+                    else {
+                        req_sent = false;
+                        http_req_stream_id += 4;
+                    }
                 }
             }
+        }
+
+        // Send an HTTP request as soon as we got an update saying the response has finished being read.
+        if conn.is_established() && !req_sent {
+            info!("sending HTTP request for {}", url.path());
+
+            let req = format!("GET {}\r\n", url.path());
+            conn.stream_send(http_req_stream_id, req.as_bytes(), true)
+                .unwrap();
+
+            info!("Completed stream_send");
+            req_sent = true;
+            num_reqs_sent += 1
         }
 
         // Generate outgoing QUIC packets and send them on the UDP socket, until
